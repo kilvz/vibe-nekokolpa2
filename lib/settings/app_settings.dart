@@ -68,12 +68,17 @@ class AppSettings extends ChangeNotifier {
   SharedPreferences? _prefs;
   final String _version = kAppVersion;
   final String _buildNumber = kAppBuildNumber;
+
+  /// Custom revision of this fork (c1, c2, ...). Shown in the version
+  /// display so installed builds can be told apart; the same suffix is
+  /// used in the release tag. Bump together with the tag in build.yml.
+  static const String customRevision = 'c3';
   String _packageName = '';
 
   String get version => _version;
   String get buildNumber => _buildNumber;
   String get commitHash => kCommitHash;
-  String get versionDisplay => 'v$_version b$_buildNumber';
+  String get versionDisplay => 'v$_version b$_buildNumber-$customRevision';
 
   String _flavorFileVariant = '';
 

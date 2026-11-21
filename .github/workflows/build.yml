@@ -299,7 +299,7 @@ jobs:
         run: |
           set -euo pipefail
           # Fork: the -cN suffix lives only in the release tag, never in pubspec.
-          tag_name="v$VERSION-c2"
+          tag_name="v$VERSION-c3"
           if [ "$TOOLS_ONLY" = true ]; then
             gh release view "$tag_name" --repo "$GITHUB_REPOSITORY" >/dev/null
             gh release upload "$tag_name" dist/* --repo "$GITHUB_REPOSITORY" --clobber

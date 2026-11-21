@@ -2657,6 +2657,14 @@ class _ProfilesScreenState extends State<ProfilesScreen>
     if (error is ConditionOfUseNotSatisfiedException) return true;
     if (error is ProactiveRefreshException) return true;
     if (error is! AppException) return false;
+    // A channel reclaimed by a concurrent job (list reload, SIM-event
+    // reconnect, notification session) right after a switch is transient:
+    // the switch already went through, and the next fresh read re-checks
+    // the state instead of reporting the switch as failed.
+    if (error.code == AppErrorCode.ERROR_OMAPI_CHANNEL_OPEN_FAILED &&
+        (error.message?.contains('is stale') ?? false)) {
+      return true;
+    }
     return error.code == AppErrorCode.ERROR_BLUETOOTH_TIMEOUT ||
         error.code == AppErrorCode.ERROR_BLUETOOTH_NOT_CONNECTED ||
         error.code == AppErrorCode.ERROR_BLUETOOTH_CONNECT_FAILED ||

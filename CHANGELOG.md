@@ -41,6 +41,8 @@ All notable changes to NekokoLPA2 will be documented in this file.
 - Rapid SIM switching no longer fails with "OMAPI channel handle is stale": profile loads queue behind each other, a newer load supersedes an older one instead of racing it, and a stale channel is retried once instead of showing Failed.
 - The SIM and profile lists are cached: switching back to a SIM shows its profiles instantly, and a background check verifies the SIM and profile list are unchanged before anything executes. A profile changed outside the app is detected by that check and the list updates silently; SIM change events still invalidate the cache immediately, and manual refresh always rescans.
 - Every profile execution (enable, disable, delete) first verifies the SIM is still the one the list was taken from; a changed card refreshes the list instead of executing on stale data.
+- The version display now shows the custom revision (e.g. "v2.5.0 b606-c3") so installed builds can be told apart.
+- A stale OMAPI channel during profile-switch verification is now treated as transient: the switch already went through, so the next fresh read re-checks the state instead of reporting the switch as failed.
 
 ## [2.4.5+605] - 2026-11-08
 
