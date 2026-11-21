@@ -1626,6 +1626,7 @@ class _ProfilesScreenState extends State<ProfilesScreen>
   void _maybeShowOmapiEuiccNotice(Reader reader, String? atr) {
     if (!PlatformX.isAndroid ||
         !reader.id.startsWith('omapi:') ||
+        !AppSettings().showOmapiEuiccNotice ||
         AtrCapabilities.supportsEuicc(atr) != true) {
       return;
     }
@@ -1651,6 +1652,15 @@ class _ProfilesScreenState extends State<ProfilesScreen>
             title: Text(l10n.omapiEuiccDetectedTitle),
             content: Text(l10n.omapiEuiccSystemDisableWarning),
             actions: [
+              TextButton(
+                onPressed: () {
+                  unawaited(
+                    AppSettings().setShowOmapiEuiccNotice(false),
+                  );
+                  Navigator.pop(context);
+                },
+                child: Text(l10n.omapiEuiccDoNotShowAgain),
+              ),
               TextButton(
                 onPressed: () => Navigator.pop(context),
                 child: Text(l10n.ok),
@@ -2614,6 +2624,38 @@ class _ProfilesScreenState extends State<ProfilesScreen>
         }
       }
       return;
+    }
+
+    // Warn before disabling the currently active profile on an OMAPI
+    // reader: switching it off may stop OMAPI from detecting the
+    // eUICC. This warning is always shown, even when the
+    // connect-time notice was hidden with "Don't show again".
+    if (!enable &&
+        p.enabled &&
+        PlatformX.isAndroid &&
+        reader.id.startsWith('omapi:')) {
+      final l10n = AppLocalizations.of(context)!;
+      final proceed =
+          await showDialog<bool>(
+            context: context,
+            barrierDismissible: false,
+            builder: (context) => AlertDialog(
+              title: Text(l10n.omapiEuiccDetectedTitle),
+              content: Text(l10n.omapiEuiccSystemDisableWarning),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  child: Text(l10n.cancel),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.pop(context, true),
+                  child: Text(l10n.ok),
+                ),
+              ],
+            ),
+          ) ??
+          false;
+      if (!proceed || !mounted) return;
     }
 
     setState(() {

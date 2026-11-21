@@ -3048,6 +3048,13 @@ class AppLocalizationsKo extends AppLocalizations {
       'Disabling this SIM/eSIM slot in Android system settings may stop OMAPI from detecting it. Enable or switch profiles in this app instead. If the slot is already disabled, re-enable it in system settings and refresh the reader list.';
 
   @override
+  String get omapiEuiccDoNotShowAgain => 'Don\'t show again';
+
+  @override
+  String get omapiEuiccNoticeSubtitle =>
+      'Show a warning when an OMAPI eUICC is detected';
+
+  @override
   String get deleteNotificationHistoryEntry => 'Delete local history entry';
 
   @override

@@ -360,6 +360,15 @@ class AppSettings extends ChangeNotifier {
   bool _disableRefreshFlags = false;
   bool get disableRefreshFlags => _disableRefreshFlags;
 
+  bool _showOmapiEuiccNotice = true;
+  bool get showOmapiEuiccNotice => _showOmapiEuiccNotice;
+
+  Future<void> setShowOmapiEuiccNotice(bool value) async {
+    _showOmapiEuiccNotice = value;
+    await _prefs?.setBool('showOmapiEuiccNotice', value);
+    notifyListeners();
+  }
+
   bool _useNekokoIcons = true;
   bool get useNekokoIcons => _useNekokoIcons;
 
@@ -529,6 +538,7 @@ class AppSettings extends ChangeNotifier {
     _loadProfileIcons = _prefs?.getBool('loadProfileIcons_v2') ?? false;
     _useNekokoIcons = _prefs?.getBool('useNekokoIcons') ?? true;
     _disableRefreshFlags = _prefs?.getBool('disableRefreshFlags') ?? false;
+    _showOmapiEuiccNotice = _prefs?.getBool('showOmapiEuiccNotice') ?? true;
     _redactEidFirst = _prefs?.getBool('redactEidFirst') ?? true;
     _redactEidMiddle = _prefs?.getBool('redactEidMiddle') ?? false;
     _redactEidLast = _prefs?.getBool('redactEidLast') ?? true;

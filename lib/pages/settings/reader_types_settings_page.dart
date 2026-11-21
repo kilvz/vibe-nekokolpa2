@@ -84,6 +84,7 @@ class ReaderTypesSettingsPage extends StatelessWidget {
                           ],
                         ),
                       _buildOmapiConnectorSwitcher(context),
+                      _buildOmapiEuiccNoticeSwitcher(context),
                       if (kIsPrivileged) _buildTmapiConnectorSwitcher(context),
                     ],
                   ],
@@ -443,6 +444,36 @@ class ReaderTypesSettingsPage extends StatelessWidget {
       ),
       onTap: () =>
           settings.setEnableOmapiConnector(!settings.enableOmapiConnector),
+    );
+  }
+
+  Widget _buildOmapiEuiccNoticeSwitcher(BuildContext context) {
+    final settings = AppSettings();
+    final l10n = AppLocalizations.of(context)!;
+
+    return _buildResponsiveTile(
+      context,
+      icon: Container(
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: Colors.green.withValues(alpha: 0.1),
+          shape: BoxShape.circle,
+        ),
+        child: const Icon(
+          Icons.notifications_active_rounded,
+          size: 20,
+          color: Colors.green,
+        ),
+      ),
+      title: l10n.omapiEuiccDetectedTitle,
+      subtitle: l10n.omapiEuiccNoticeSubtitle,
+      child: _buildCustomSwitch(
+        context,
+        settings.showOmapiEuiccNotice,
+        (v) => settings.setShowOmapiEuiccNotice(v),
+      ),
+      onTap: () =>
+          settings.setShowOmapiEuiccNotice(!settings.showOmapiEuiccNotice),
     );
   }
 

@@ -5735,6 +5735,18 @@ abstract class AppLocalizations {
   /// **'Disabling this SIM/eSIM slot in Android system settings may stop OMAPI from detecting it. Enable or switch profiles in this app instead. If the slot is already disabled, re-enable it in system settings and refresh the reader list.'**
   String get omapiEuiccSystemDisableWarning;
 
+  /// No description provided for @omapiEuiccDoNotShowAgain.
+  ///
+  /// In en, this message translates to:
+  /// **'Don't show again'**
+  String get omapiEuiccDoNotShowAgain;
+
+  /// No description provided for @omapiEuiccNoticeSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Show a warning when an OMAPI eUICC is detected'**
+  String get omapiEuiccNoticeSubtitle;
+
   /// Deletes the local notification history payload, without removing the notification from the eUICC or sending it again.
   ///
   /// In en, this message translates to:
