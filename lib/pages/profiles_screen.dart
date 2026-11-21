@@ -109,6 +109,16 @@ class ReaderState {
   String? togglingIccid;
   bool hasBeenLoaded = false;
 
+  /// Fingerprint of the last verified profile list: the EID plus the sorted
+  /// ICCIDs with their enabled flags. Null until a list has been verified.
+  /// A background re-list compares against this to spot profiles changed
+  /// outside the app.
+  String? profileFingerprint;
+
+  /// ATR seen when [profileFingerprint] was taken: the SIM identity check
+  /// that gates executing anything on the cached list.
+  String? fingerprintAtr;
+
   // Helpers to match legacy logic
   bool get isNoCard => status == ReaderStatus.noCard;
   set isNoCard(bool val) {
@@ -249,6 +259,9 @@ class _ProfilesScreenState extends State<ProfilesScreen>
   /// Height of the developer log console, adjustable by its drag handle.
   double _consoleHeight = 260;
   int _profileSwitchGeneration = 0;
+  /// Generation counter for profile loads: a newer load supersedes older
+  /// ones, so a superseded load never paints an error or stale results.
+  int _listProfilesGeneration = 0;
   Future<void> _profileMetadataPersistence = Future<void>.value();
   final GlobalKey _downloadButtonKey = GlobalKey();
   final GlobalKey _downloadButtonKey2 = GlobalKey();
@@ -257,6 +270,8 @@ class _ProfilesScreenState extends State<ProfilesScreen>
       {}; // Track restored devices (BLE & Remote)
   bool _hasLoadedRestoredReaders = false;
   bool _isListingProfiles = false; // Prevent infinite loops
+  /// A profile toggle is waiting on its pre-execution SIM verification.
+  bool _verifyingProfile = false;
 
   String? _pendingDeepLinkCode;
   Uri? _pendingSigningUri;
@@ -613,6 +628,11 @@ class _ProfilesScreenState extends State<ProfilesScreen>
               _readerStates.clear();
             }
           });
+          // A SIM event may mean the card changed outside the app: drop
+          // cached profile fingerprints so the next list is a cold one.
+          for (final s in _readerStates.values) {
+            s.profileFingerprint = null;
+          }
           _loadReaders(skipLoading: true, force: true);
         });
       }
@@ -1419,6 +1439,9 @@ class _ProfilesScreenState extends State<ProfilesScreen>
       return;
     }
 
+    // Switching readers supersedes any list still running for the old one.
+    ++_listProfilesGeneration;
+
     if (!_readers.contains(reader)) {
       await _loadReaders(skipLoading: true);
       if (mounted && _readers.contains(reader)) {
@@ -1555,7 +1578,7 @@ class _ProfilesScreenState extends State<ProfilesScreen>
     });
 
     try {
-      await _loadReaders();
+      await _loadReaders(force: true);
       if (_selectedReader?.source is SeHalAdapter) {
         await _listProfiles(disableRetry: true);
       }
@@ -1674,9 +1697,52 @@ class _ProfilesScreenState extends State<ProfilesScreen>
 
   // _handleReaderSelection removed
 
+  String _profileListFingerprint(List<EuiccProfile> profiles, String? eid) {
+    final parts =
+        profiles.map((p) => '${p.iccid}:${p.enabled ? 1 : 0}').toList()
+          ..sort();
+    return '${eid ?? ''}|${parts.join(',')}';
+  }
+
+  bool _isStaleChannelError(Object e) =>
+      e is AppException &&
+      e.code == AppErrorCode.ERROR_OMAPI_CHANNEL_OPEN_FAILED &&
+      (e.message?.contains('is stale') ?? false);
+
+  /// Re-lists profiles in the background and returns the fresh copy of [p]
+  /// when the SIM is unchanged. Returns null when the card changed or the
+  /// profile is gone, so the caller refreshes instead of executing stale.
+  Future<EuiccProfile?> _verifyProfileCurrent(
+    Reader reader,
+    EuiccProfile p,
+  ) async {
+    final state = _readerStates[reader.id];
+    if (state?.profileFingerprint == null) return p;
+    final oldAtr = state?.fingerprintAtr;
+    final genBefore = _listProfilesGeneration;
+    await _listProfiles(verifyOnly: true);
+    if (!mounted ||
+        _selectedReader?.id != reader.id ||
+        _listProfilesGeneration != genBefore + 1) {
+      return null;
+    }
+    final freshState = _readerStates[reader.id];
+    final newAtr = freshState?.fingerprintAtr;
+    if (freshState?.profileFingerprint == null ||
+        (oldAtr != null && newAtr != null && oldAtr != newAtr)) {
+      _log.warning('SIM changed under cached list; refusing stale execute');
+      return null;
+    }
+    for (final x in freshState?.profiles ?? const <EuiccProfile>[]) {
+      if (x.iccid == p.iccid) return x;
+    }
+    return null;
+  }
+
   Future<void> _listProfiles({
     int retryCount = 0,
     bool disableRetry = false,
+    bool verifyOnly = false,
   }) async {
     // Reached after awaits from several callers; context is read just below.
     if (!mounted) return;
@@ -1684,28 +1750,53 @@ class _ProfilesScreenState extends State<ProfilesScreen>
     final reader = _selectedReader;
     if (reader == null) return;
     final l10n = AppLocalizations.of(context)!;
+    final gen = ++_listProfilesGeneration;
 
-    _updateReaderSession(reader.id, (s) {
-      s.status = ReaderStatus.loading;
-      s.loading = true;
-      s.isListingProfiles = true;
-      s.isConnecting = true;
-      s.isAraMFailed = false;
-      s.operationLoadingMessage = l10n.connectingToReader;
-      s.lastError = null;
-    });
+    // Cache hit: the list is already on screen, so show it instantly and
+    // verify it in the background instead of reloading with a spinner.
+    final cachedState = _readerStates[reader.id];
+    final hasWarmCache =
+        cachedState?.profiles != null &&
+        cachedState!.profiles!.isNotEmpty &&
+        cachedState.profileFingerprint != null;
+    if (!verifyOnly && hasWarmCache) {
+      _updateReaderSession(reader.id, (s) {
+        s.status = ReaderStatus.ready;
+        s.loading = false;
+        s.isListingProfiles = false;
+        s.operationLoadingMessage = null;
+        s.lastError = null;
+      });
+      unawaited(_listProfiles(verifyOnly: true));
+      return;
+    }
+
+    if (!verifyOnly) {
+      _updateReaderSession(reader.id, (s) {
+        s.status = ReaderStatus.loading;
+        s.loading = true;
+        s.isListingProfiles = true;
+        s.isConnecting = true;
+        s.isAraMFailed = false;
+        s.operationLoadingMessage = l10n.connectingToReader;
+        s.lastError = null;
+      });
+    }
 
     String? eid;
     EUICCInfo2? info2;
     String? connectedAtr;
 
     try {
-      _updateReaderSession(reader.id, (s) => s.isConnecting = true);
+      if (!verifyOnly) {
+        _updateReaderSession(reader.id, (s) => s.isConnecting = true);
+      }
 
       await _adapter.runExclusive(() async {
         // A Bluetooth reader can spend tens of seconds connecting, which one
         // static message makes look like a hang, so show each step it reports.
         void showConnectStep() {
+          if (verifyOnly) return;
           final progress = _adapter.connectProgress.value;
           if (progress == null) return;
           _updateReaderSession(
@@ -1730,10 +1821,12 @@ class _ProfilesScreenState extends State<ProfilesScreen>
           _adapter.connectProgress.removeListener(showConnectStep);
         }
 
-        _updateReaderSession(
-          reader.id,
-          (s) => s.operationLoadingMessage = l10n.connectingToEuicc,
-        );
+        if (!verifyOnly) {
+          _updateReaderSession(
+            reader.id,
+            (s) => s.operationLoadingMessage = l10n.connectingToEuicc,
+          );
+        }
         if (mounted && _selectedReader?.id == reader.id) {
           _updateReaderSession(reader.id, (s) => s.isConnecting = false);
         }
@@ -1748,10 +1841,12 @@ class _ProfilesScreenState extends State<ProfilesScreen>
           // copy is what a mid-fetch session update puts back, so keep it in
           // step or the message jumps back to connecting.
           // 1. Fetch Basic Info
-          _updateReaderSession(
-            reader.id,
-            (s) => s.operationLoadingMessage = l10n.retrievingEid,
-          );
+          if (!verifyOnly) {
+            _updateReaderSession(
+              reader.id,
+              (s) => s.operationLoadingMessage = l10n.retrievingEid,
+            );
+          }
           final (fetchedEid, fetchedInfo2) = await _fetchEuiccData(
             channel,
             reader,
@@ -1761,10 +1856,12 @@ class _ProfilesScreenState extends State<ProfilesScreen>
           info2 = fetchedInfo2;
 
           // 2. Fetch Profiles
-          _updateReaderSession(
-            reader.id,
-            (s) => s.operationLoadingMessage = l10n.retrievingProfiles,
-          );
+          if (!verifyOnly) {
+            _updateReaderSession(
+              reader.id,
+              (s) => s.operationLoadingMessage = l10n.retrievingProfiles,
+            );
+          }
           final profiles = await _fetchProfiles(channel, reader);
 
           // 3. Save the card-reported state without substituting an expected
@@ -1779,6 +1876,46 @@ class _ProfilesScreenState extends State<ProfilesScreen>
             );
           }
 
+          final freshFingerprint = _profileListFingerprint(profiles, eid);
+          if (verifyOnly) {
+            // Silent background verification: only touch the UI when the
+            // card actually changed (e.g. a profile edited outside the app).
+            final changed =
+                _readerStates[reader.id]?.profileFingerprint !=
+                freshFingerprint;
+            if (changed) {
+              _log.info(
+                'Background verify: profile list changed for ${reader.id}, updating.',
+              );
+              _updateReaderSession(reader.id, (s) {
+                s.profiles = profiles;
+                s.eid = eid;
+                s.info2 = info2;
+                s.status = ReaderStatus.ready;
+                s.loading = false;
+                s.isListingProfiles = false;
+                s.operationLoadingMessage = null;
+                s.hasBeenLoaded = true;
+                s.profileFingerprint = freshFingerprint;
+                s.fingerprintAtr = connectedAtr;
+              });
+            } else {
+              final s = _readerStates[reader.id];
+              if (s != null) {
+                s.profileFingerprint = freshFingerprint;
+                s.fingerprintAtr = connectedAtr;
+              }
+            }
+            return;
+          }
+
+          // A newer load superseded this one: drop the result silently
+          // instead of painting stale profiles over the new reader.
+          if (gen != _listProfilesGeneration) {
+            _log.info('Discarding superseded profile list for ${reader.id}.');
+            return;
+          }
+
           // 4. Update UI: Unfreeze immediately after profiles are ready
           _updateReaderSession(reader.id, (s) {
             s.profiles = profiles;
@@ -1789,6 +1926,8 @@ class _ProfilesScreenState extends State<ProfilesScreen>
             s.isListingProfiles = false;
             s.operationLoadingMessage = null;
             s.hasBeenLoaded = true;
+            s.profileFingerprint = freshFingerprint;
+            s.fingerprintAtr = connectedAtr;
           });
 
           // Notify plugins
@@ -1799,11 +1938,37 @@ class _ProfilesScreenState extends State<ProfilesScreen>
           await channel.close();
         }
       });
-      _autoDiscoveryFinished = true;
       _setSwitching(false); // Success! Toggle is done.
-      // Start a fresh notification session after releasing the list reservation.
-      await _handleNotifications(null, eid, reader);
+      // A superseded load (or a silent background verify) must not start a
+      // notification session for a reader the user already left.
+      if (!verifyOnly &&
+          gen == _listProfilesGeneration &&
+          mounted &&
+          _selectedReader?.id == reader.id) {
+        _autoDiscoveryFinished = true;
+        // Start a fresh notification session after releasing the list reservation.
+        await _handleNotifications(null, eid, reader);
+      }
     } catch (e) {
+      // A newer load superseded this one, or a silent background verify
+      // failed: never show its error on screen.
+      if (gen != _listProfilesGeneration || !mounted || verifyOnly) {
+        if (verifyOnly) {
+          _log.info('Background profile verify failed, keeping cache: $e');
+        }
+        return;
+      }
+      // A channel that went stale while another job used the reader is
+      // transient: retry once, queued behind that job, instead of failing.
+      if (_isStaleChannelError(e) && retryCount == 0) {
+        _log.info('Stale OMAPI channel during list, retrying once: $e');
+        await Future.delayed(const Duration(milliseconds: 800));
+        if (mounted && gen == _listProfilesGeneration) {
+          await _listProfiles(retryCount: retryCount + 1);
+        }
+        return;
+      }
+
       if (isOmapiSessionCorruptedError(e)) {
         _setSwitching(false);
         _handleOperationError(reader, e);
@@ -2503,7 +2668,7 @@ class _ProfilesScreenState extends State<ProfilesScreen>
     final isProcessingNotifs = NotificationService().isProcessing.value;
     final isSwitching = _isSwitching || ProfilesScreen.isSwitchingGlobal;
 
-    if (isProcessingNotifs || isSwitching || _loading) {
+    if (isProcessingNotifs || isSwitching || _loading || _verifyingProfile) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -2520,6 +2685,20 @@ class _ProfilesScreenState extends State<ProfilesScreen>
 
     final reader = _selectedReader;
     if (reader == null) return;
+
+    // Every execution runs only after verifying the SIM is still the one
+    // the list was taken from; a changed card refreshes the list instead.
+    _verifyingProfile = true;
+    final fresh = await _verifyProfileCurrent(
+      reader,
+      p,
+    ).whenComplete(() => _verifyingProfile = false);
+    if (!mounted) return;
+    if (fresh == null) {
+      await _listProfiles();
+      return;
+    }
+    p = fresh;
 
     if (reader.source is SeHalAdapter) {
       final l10n = AppLocalizations.of(context)!;

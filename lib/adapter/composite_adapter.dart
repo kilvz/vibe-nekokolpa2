@@ -108,10 +108,17 @@ class CompositeAdapter extends BaseAdapter {
   // Cache available readers to help bridging old generic UI calls if needed,
   // or simply because we might want to lookup by ID.
   final Map<String, Reader> _readerCache = {};
+  /// Last listed readers. Returned as-is while the SIM set is unchanged,
+  /// so opening the screen does not rescan hardware every time. Cleared
+  /// wherever [_readerCache] is cleared (SIM events, SE connect).
+  List<Reader>? _cachedReaders;
   final Set<String> _hiddenDuplicateAndroidReaderIds = {};
 
   @override
   Future<List<Reader>> listReaders({bool force = false}) async {
+    if (!force && _cachedReaders != null) {
+      return List<Reader>.of(_cachedReaders!);
+    }
     if (!force && _listReadersFuture != null) return await _listReadersFuture!;
 
     // A forced listing can replace one still in flight. Only the newest may
@@ -119,7 +126,9 @@ class CompositeAdapter extends BaseAdapter {
     final listing = _doListReaders(force: force);
     _listReadersFuture = listing;
     try {
-      return await listing;
+      final result = await listing;
+      _cachedReaders = result;
+      return result;
     } finally {
       if (identical(_listReadersFuture, listing)) _listReadersFuture = null;
     }
@@ -729,6 +738,7 @@ class CompositeAdapter extends BaseAdapter {
       // a SIM reset, which would reconnect an active card operation.
       _omapiAdapter.invalidateReaderCache();
       _readerCache.clear();
+      _cachedReaders = null;
       _simChangeEventController.add(event);
       return;
     }
@@ -798,6 +808,7 @@ class CompositeAdapter extends BaseAdapter {
 
     // 2. Clear cache and inform listeners (like ProfilesScreen) so they can refresh reader list
     _readerCache.clear();
+    _cachedReaders = null;
     _simChangeEventController.add({'type': type, 'state': state});
   }
 }

@@ -38,6 +38,9 @@ All notable changes to NekokoLPA2 will be documented in this file.
 - The "Keep this eUICC available" warning now has a "Don't show again" button, so it stops appearing on every app restart.
 - Disabling the currently active profile on an OMAPI eUICC now asks for confirmation first, showing the same warning.
 - Settings > Reader types has a "Keep this eUICC available" switch to turn the warning back on after choosing "Don't show again".
+- Rapid SIM switching no longer fails with "OMAPI channel handle is stale": profile loads queue behind each other, a newer load supersedes an older one instead of racing it, and a stale channel is retried once instead of showing Failed.
+- The SIM and profile lists are cached: switching back to a SIM shows its profiles instantly, and a background check verifies the SIM and profile list are unchanged before anything executes. A profile changed outside the app is detected by that check and the list updates silently; SIM change events still invalidate the cache immediately, and manual refresh always rescans.
+- Every profile execution (enable, disable, delete) first verifies the SIM is still the one the list was taken from; a changed card refreshes the list instead of executing on stale data.
 
 ## [2.4.5+605] - 2026-11-08
 
