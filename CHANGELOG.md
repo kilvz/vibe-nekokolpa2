@@ -2,7 +2,7 @@
 
 All notable changes to NekokoLPA2 will be documented in this file.
 
-## [2.5.1+607] - 2026-11-21
+## [2.5.0-c1+606] - 2026-11-21
 
 ### Added
 - The "Keep this eUICC available" warning now has a "Don't show again" button, so it stops appearing on every app restart.
