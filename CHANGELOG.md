@@ -2,13 +2,6 @@
 
 All notable changes to NekokoLPA2 will be documented in this file.
 
-## [2.5.0-c1+606] - 2026-11-21
-
-### Added
-- The "Keep this eUICC available" warning now has a "Don't show again" button, so it stops appearing on every app restart.
-- Disabling the currently active profile on an OMAPI eUICC now asks for confirmation first, showing the same warning.
-- Settings > Reader types has a "Keep this eUICC available" switch to turn the warning back on after choosing "Don't show again".
-
 ## [Unreleased]
 
 ### Changed
@@ -40,6 +33,11 @@ All notable changes to NekokoLPA2 will be documented in this file.
 
 ### Fixed
 - Clear the OMAPI "SIM/eSIM channel became invalid" lock after a device restart even when the saved failure has no message or no boot identity. Such a lock previously survived every restart, so OMAPI stayed unusable until the app's data was cleared.
+
+### Custom
+- The "Keep this eUICC available" warning now has a "Don't show again" button, so it stops appearing on every app restart.
+- Disabling the currently active profile on an OMAPI eUICC now asks for confirmation first, showing the same warning.
+- Settings > Reader types has a "Keep this eUICC available" switch to turn the warning back on after choosing "Don't show again".
 
 ## [2.4.5+605] - 2026-11-08
 

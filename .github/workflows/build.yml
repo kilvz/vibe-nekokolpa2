@@ -271,6 +271,9 @@ jobs:
 
   release:
     name: Create GitHub Release
+    # Fork: web is not a release gate — the web build is broken on master
+    # (serial_phoenix imports dart:ffi, which dart2js rejects). The web job
+    # still runs; the release ships without the web zip.
     if: >-
       always() && !cancelled() &&
       github.event_name != 'pull_request' &&
@@ -278,8 +281,8 @@ jobs:
       needs.meta.result == 'success' && needs.android.result == 'success' &&
       needs.otbridge.result == 'success' &&
       (inputs.android_tools_only ||
-       (needs.web.result == 'success' && needs.linux.result == 'success' && needs.windows.result == 'success'))
-    needs: [meta, android, otbridge, web, linux, windows]
+       (needs.linux.result == 'success' && needs.windows.result == 'success'))
+    needs: [meta, android, otbridge, linux, windows]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -295,7 +298,8 @@ jobs:
           TOOLS_ONLY: ${{ inputs.android_tools_only }}
         run: |
           set -euo pipefail
-          tag_name="v$VERSION"
+          # Fork: the -cN suffix lives only in the release tag, never in pubspec.
+          tag_name="v$VERSION-c1"
           if [ "$TOOLS_ONLY" = true ]; then
             gh release view "$tag_name" --repo "$GITHUB_REPOSITORY" >/dev/null
             gh release upload "$tag_name" dist/* --repo "$GITHUB_REPOSITORY" --clobber
@@ -314,7 +318,6 @@ jobs:
           | \`${ANDROID_ARTIFACT_PREFIX}-${VERSION_CLEAN}-magisk.zip\` | Rooted Android | Full app systemless module |
           | \`otbridge-*.apk\` | Rooted Android | Small OMAPI/TMAPI helper |
           | \`otbridge-magisk-kernelsu-*.zip\` | Rooted Android | Helper systemless module |
-          | \`${DESKTOP_PACKAGE_ID}.web-${VERSION_CLEAN}.zip\` | Web | Static web build |
           | \`${DESKTOP_PACKAGE_ID}.windows-${VERSION_CLEAN}-setup.exe\` | Windows | Inno Setup installer |
           | \`${DESKTOP_PACKAGE_ID}.windows-${VERSION_CLEAN}-x64.zip\` | Windows | Portable archive |
           | \`${DESKTOP_PACKAGE_ID}.linux-${VERSION_CLEAN}-x64.tar.gz\` | Linux | Portable tarball |
